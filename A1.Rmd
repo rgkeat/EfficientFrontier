@@ -1,0 +1,1277 @@
+---
+title: "Gan_Optimization"
+output: html_document
+date: "2024-07-28"
+---
+
+# 2 Initialize library and directory ~~~~~~~~~~~~~~~~~~~~~
+
+```{r, initialize}
+require(readxl)
+require(xts)
+require(readr)
+require(tidyverse)
+require(broom)
+require(stargazer)
+require(tidyquant)
+require(purrr)
+require(tidyr)
+require(dplyr)
+require(quantmod)
+require(PerformanceAnalytics)
+require(PortfolioAnalytics)
+require(TTR)
+require(DEoptim)
+require(ROI)
+#require(qmao)
+require(zoo)
+library(reshape2)
+library(quantmod)
+require(quadprog)
+require(corrplot)
+require(ggplot2)
+require(foreach)
+#install.packages("ROI.plugin.quadprog")
+#install.packages("ROI.plugin.glpk")
+library(ROI.plugin.quadprog)
+library(ROI.plugin.glpk)
+```
+
+```{r, Start Here}
+#path <- "/Users/rgkeat/downloads/tradingProgramming/port1.xlsx"
+#port1 <- read_xlsx(path)
+#path <- "/Users/rgkeat/downloads/tradingProgramming/port2.xlsx"
+#port2 <- read_xlsx(path)
+path <- "C:/Users/chard/OneDrive/Desktop/MSCF/Courses/Term5/Trading Software and Programming/scripts/PortOpt_Final/port1.xlsx"
+port1 <- read_xlsx(path)
+path <- "C:/Users/chard/OneDrive/Desktop/MSCF/Courses/Term5/Trading Software and Programming/scripts/PortOpt_Final/port2.xlsx"
+port2 <- read_xlsx(path)
+```
+# 2 Transform ~~~~~~~~~~~~~~~~~~~~~
+```{r}
+rfRate <- 0.06275 
+```
+
+
+```{r}
+port2 <- merge(port1, port2, by = "date", all = TRUE)
+```
+
+```{r}
+# Convert into df
+port1 <- data.frame(port1)
+port2 <- data.frame(port2)
+head(port1)
+
+```
+
+
+```{r}
+# Convert to numeric except date
+port1[, -1] <- lapply(port1[, -1], function(x) as.numeric(as.character(x)))
+port2[, -1] <- lapply(port2[, -1], function(x) as.numeric(as.character(x)))
+```
+
+```{r}
+# Drop missing
+port1 <- na.omit(port1)
+port2 <- na.omit(port2)
+#port1 <- port1[complete.cases(port1), ]
+#port2 <- port2[complete.cases(port2), ]
+sum(is.na(port1))
+sum(is.na(port2))
+```
+
+
+
+
+```{r}
+port1 <- xts(port1[,-1], order.by = as.Date(port1$date))
+port2 <- xts(port2[,-1], order.by = as.Date(port2$date))
+head(port1)
+```
+
+```{r}
+port1ret <- PerformanceAnalytics::Return.calculate(port1,method="log")
+port1ret <- port1ret[-1]
+```
+
+```{r}
+port2ret <- PerformanceAnalytics::Return.calculate(port2,method="log")
+port2ret <- port2ret[-1]
+```
+
+```{r}
+sum(is.na(port1ret))
+sum(is.na(port2ret))
+```
+
+
+# 3 Exploratory Data Analysis (EDA) for both Portfolios ~~~~~~~~~~~~~~~~~~~~~
+## 3.1 EDA Port1 and Port2
+
+## 3.1.1 Descriptive Statistics - mean, std dev, skewness and kurtosis of asset returns
+```{r,port1 Table}
+riskTable10 <- data.frame(port1ret)
+riskTable10 <- riskTable10[complete.cases(riskTable10), ]
+rfRate <- 0.06275  
+means10 <- colMeans(riskTable10)
+risks10 <- apply(riskTable10, 2, sd)
+sharpe10 <- ifelse(risks10 != 0, (means10 - rfRate) / risks10, NA)
+riskReturnBasket10 <- data.frame(Asset = names(means10),Mean_Return = means10,Risk = risks10,Sharpe_Ratio = sharpe10)
+print(riskReturnBasket10)
+```
+
+```{r,port2 Table}
+riskTable20 <- data.frame(port2ret)
+riskTable20 <- riskTable20[complete.cases(riskTable20), ]
+means20 <- colMeans(riskTable20)
+risks20 <- apply(riskTable20, 2, sd)
+sharpe20 <- ifelse(risks20 != 0, (means20 - rfRate) / risks20, NA)
+riskReturnBasket20 <- data.frame(Asset = names(means20),Mean_Return = means20,Risk = risks20,Sharpe_Ratio = sharpe20)
+print(riskReturnBasket20)
+```
+
+```{r}
+summary_returns_10 <- table.Stats(port1ret)
+print(summary_returns_10)
+```
+```{r}
+if(any(port2ret <= 0)) {
+    print("Data contains non-positive values.")
+}
+```
+
+```{r}
+summary_returns_20 <- table.Stats(port2ret)
+print(summary_returns_20)
+```
+
+## 3.1.2 Correlation matrix of asset returns.
+
+```{r}
+correlation_matrix_returns_10 <- cor(port1ret, use = "complete.obs")
+print(correlation_matrix_returns_10)
+```
+```{r}
+correlation_matrix_returns_20 <- cor(port2ret, use = "complete.obs")
+print(correlation_matrix_returns_20)
+```
+
+## 3.1.3 Visualization - time series plots, histograms, density plots of asset returns; HEATMAP of the correlation matrix
+```{r}
+corrplot(correlation_matrix_returns_10, method = "color")
+melted_correlation_matrix <- melt(correlation_matrix_returns_10)
+ggplot(melted_correlation_matrix, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Correlation Matrix Heatmap", x = "Assets", y = "Assets")
+```
+
+```{r}
+all_returns <- merge(port1ret, port2ret)
+all_returns_corr <- data.frame(port1ret = rnorm(100), port2ret = rnorm(100))
+```
+
+```{r}
+correlation_matrix <- cor(all_returns_corr)
+print(correlation_matrix)
+```
+
+
+```{r}
+corrplot(correlation_matrix, method = "color")
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(melted_correlation_matrix, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Correlation Matrix Heatmap", x = "Assets", y = "Assets")
+```
+
+```{r}
+sum(is.na(port1ret))
+sum(is.na(port2ret))
+```
+```{r}
+chart.CumReturns(port1ret, main = "Ret ALL for R/R Port1"
+                 ,wealth.index = TRUE
+                 ,legend.loc = TRUE
+                 ,geometric = FALSE
+                 )
+```
+
+## Plot Cumulative Returns port1
+```{r}
+chart.CumReturns(port1ret, main = "Cumulative Ret for R/R Port1"
+                 ,wealth.index = TRUE
+                 ,legend.loc = TRUE
+                 )
+```
+
+
+
+
+```{r}
+summary(port1ret)
+boxplot(port1ret,main="Boxplot",las=2)
+```
+```{r}
+str(port2ret)
+```
+
+```{r}
+#port1 <- na.omit(port1)
+#port2 <- na.omit(port2)
+#port1 <- port1[complete.cases(port1), ]
+#port2 <- port2[complete.cases(port2), ]
+sum(is.na(port1ret))
+sum(is.na(port2ret))
+```
+
+
+```{r}
+charts.PerformanceSummary(port1ret
+                          ,Rf=rfRate
+                          ,main = "ALL Performance Port 1"
+                          ,geometric=FALSE
+#                          ,methods="StdDev"
+                          ,plot.engine="ggplot2"
+                          )
+```
+```{r}
+charts.PerformanceSummary(port1ret
+                          ,Rf=rfRate
+                          ,main = "Cumulative Performance Port 1"
+#                          ,geometric=FALSE
+#                          ,methods="StdDev"
+                          ,plot.engine="ggplot2"
+                          )
+```
+
+# Plot Cumulative Returns port2
+```{r}
+chart.CumReturns(port2ret
+                 ,Rf=rfRate
+                 ,main = "ALL Ret for R/R Port2"
+                 ,wealth.index = TRUE
+                 ,legend.loc = TRUE
+                 ,geometric=FALSE
+                 ,methods="StdDev"
+#                 ,plot.engine="ggplot2"
+                 )
+```
+```{r}
+chart.CumReturns(port2ret
+                 ,Rf=rfRate
+                 ,main = "Cumulative Ret for R/R Port2"
+                 ,wealth.index = TRUE
+                 ,legend.loc = TRUE
+#                 ,geometric=FALSE
+                 ,methods="StdDev"
+#                 ,plot.engine="ggplot2"
+                 )
+```
+
+```{r}
+charts.PerformanceSummary(port2ret,Rf=rfRate,main="cumulative performance port2")
+```
+```{r}
+charts.PerformanceSummary(port2ret,Rf=rfRate,geometric=FALSE,main="ALL performance port2")
+```
+
+# 4. Modeling ~~~~~~~~~~~~~~~~~~~~~
+
+## 4.1 Portfolio 1
+### 4.1.1 Optimized Portfolio with No Rebalancing
+#### Initiate the portfolio object for fitting the objective, constraints, and other hyperparameters 
+```{r}
+portf_10 <- portfolio.spec(assets = colnames((port1ret)))
+portf_20 <- portfolio.spec(assets = colnames((port2ret)))
+```
+
+#### Add constraints port1
+```{r}
+portf_10 <- add.constraint(portf_10, type = "full_investment")
+portf_10 <- add.constraint(portf_10, type = "long_only")
+portf_10 <- add.constraint(portf_10, type = "box", min = 0.0, max = 1.01)
+```
+
+#### Add constraints port2
+```{r}
+portf_20 <- add.constraint(portf_20, type = "full_investment")
+portf_20 <- add.constraint(portf_20, type = "long_only")
+portf_20 <- add.constraint(portf_20, type = "box", min = 0.0, max = 1.01)
+```
+
+#### initialize return and risk parameters for port1 specifications
+```{r}
+# Objective to maximize return
+portf_10 <- add.objective(portf_10, type = "return", name = "mean")
+
+# Objective to minimize risk (standard deviation)
+portf_10 <- add.objective(portf_10, type = "risk", name = "StdDev")
+```
+
+#### initialize return and risk parameters for port2 specifications
+```{r}
+# Objective to maximize return
+portf_20 <- add.objective(portf_20, type = "return", name = "mean")
+
+# Objective to minimize risk (standard deviation)
+portf_20 <- add.objective(portf_20, type = "risk", name = "StdDev")
+```
+
+#### 4.1.1 Optimized Portfolio with No Rebalancing
+```{r}
+opt_10 <- PortfolioAnalytics::optimize.portfolio(port1ret
+                                                 ,portfolio = portf_10
+                                                 ,optimize_method = "ROI"
+                                                 ,trace = TRUE
+                                                 )
+print(opt_10)
+```
+
+### 4.2 Optimized Portfolio with Rebalancing port1
+```{r}
+opt_10_rebalanced <- optimize.portfolio.rebalancing(
+  R = port1ret
+  ,portfolio = portf_10
+  ,optimize_method = "ROI"
+  ,rebalance_on = "quarter"
+  ,trace = TRUE
+)
+```
+
+```{r,eval=TRUE}
+# Extract and normalize weights
+weights_10_rebalanced <- na.omit(extractWeights(opt_10_rebalanced))
+```
+
+
+```{r,eval=FALSE}
+# Normalize weights if necessary
+#(weights_10_rebalanced <- weights_10_rebalanced / rowSums(weights_10_rebalanced, na.rm = TRUE))
+# Extract the objective measures for the single period risk optimization with yearly rebalancing
+#(weights_10_rebalanced_objectivemeasures <- extractObjectiveMeasures(opt_10_rebalanced))
+```
+
+# Optimize Portfolio - 20 stocks
+```{r}
+opt_20 <- optimize.portfolio(port2ret, 
+                             portfolio = portf_20
+                             ,optimize_method = "ROI"
+                             ,trace = TRUE
+                             )
+print(opt_20)
+```
+
+# Extract Portfolio Weights for 20 stocks
+```{r}
+weights_20 <- extractWeights(opt_20)
+print(weights_20)
+```
+
+# Optimization with Rebalancing - 20 stocks
+```{r}
+opt_20_rebalanced <- optimize.portfolio.rebalancing(
+  R = port2ret
+  ,portfolio = portf_20
+  ,optimize_method = "ROI"
+  ,trace = TRUE
+  ,search_size = 1000
+  ,rebalance_on = "quarters"
+  )
+```
+
+```{r}
+## Extract the objective measures for the single period risk optimization with Quarterly rebalancing
+
+weights_20_rebalanced <- extractWeights(opt_20_rebalanced)
+weights_20_rebalanced_objectivemeasures <- extractObjectiveMeasures(opt_20_rebalanced)
+```
+
+
+## plot optimal weights
+```{r}
+chart.Weights(opt_10, plot.type = "bar")
+chart.Weights(opt_20, plot.type = "bar")
+chart.Weights(opt_20_rebalanced, plot.type = "bar")
+chart.Weights(opt_10_rebalanced, plot.type = "bar")
+```
+
+## port1 chart
+```{r}
+chart.Weights(opt_10
+              ,neighbors = NULL
+              ,main = "Optimal Portfolio Weights - 10"
+              ,las = 1
+              ,xlab = "Stock"
+              ,cex.lab = 1
+              ,element.color = "darkgray"
+              ,cex.axis = 0.8
+              ,colorset = c("#e5F5F9", "#99D8C9")
+              ,legend.loc = "topright"
+              ,cex.legend = 0.5
+              ,plot.type = "bar"
+              )
+```
+
+## port2 chart
+```{r}
+chart.Weights(opt_20
+              ,neighbors = NULL
+              ,main = "Optimal Portfolio Weights - 20"
+              ,las = 1
+              ,xlab = "Stock"
+              ,cex.lab = 1
+              ,element.color = "darkgray"
+              ,cex.axis = 0.8
+              ,colorset = c("#e5F5F9", "#99D8C9")
+              ,legend.loc = "topright"
+              ,cex.legend = 0.5, plot.type = "bar"
+              )
+```
+
+```{r}
+weights_10 <- extractWeights(opt_10)
+weights_20 <- extractWeights(opt_20)
+```
+
+## Calculate Portfolio Returns (for 10 & 20 stocks and with rebalancing)
+```{r}
+portfolio_returns_10 <- Return.portfolio(R = port1ret, weights = weights_10)
+portfolio_returns_10_rebalanced <- Return.portfolio(R = port1ret, weights = weights_10_rebalanced)
+
+portfolio_returns_20 <- Return.portfolio(R = port2ret, weights = weights_20)
+portfolio_returns_20_rebalanced <- Return.portfolio(R = port2ret, weights = weights_20_rebalanced)
+```
+
+## Comparison 10 stocks with Rebalancing vs No Rebalancing
+```{r}
+allopt_10 <- merge(portfolio_returns_10, portfolio_returns_10_rebalanced)
+colnames(allopt_10) <- c("Portfolio Returns (No Rebalancing)", "Portfolio Returns (With Rebalancing)")
+print(colnames(allopt_10))
+```
+
+## Comparison 20 stocks with Rebalancing vs No Rebalancing
+```{r}
+allopt_20 <- merge(portfolio_returns_20, portfolio_returns_20_rebalanced)
+colnames(allopt_20) <- c("Portfolio Returns (No Rebalancing)", "Portfolio Returns (With Rebalancing)")
+print(colnames(allopt_20))
+```
+```{r}
+allopt_20
+```
+
+## Descriptive Statistics
+```{r}
+summary_portfolio_returns_10 <- table.Stats(portfolio_returns_10$portfolio.returns)
+summary_portfolio_returns_10_rebalanced <- table.Stats(portfolio_returns_10_rebalanced$portfolio.returns)
+summary_portfolio_returns_20 <- table.Stats(portfolio_returns_20$portfolio.returns)
+summary_portfolio_returns_20_rebalanced <- table.Stats(portfolio_returns_20_rebalanced$portfolio.returns)
+```
+
+```{r}
+all_port_returns <- merge(portfolio_returns_10, portfolio_returns_10_rebalanced, portfolio_returns_20, portfolio_returns_20_rebalanced)
+all_port_returns_corr <- data.frame(
+  portfolio_returns_10 = rnorm(100)
+  ,portfolio_returns_10_rebalanced = rnorm(100)
+  ,portfolio_returns_20 = rnorm(100)
+  ,portfolio_returns_20_rebalanced = rnorm(100)
+  )
+```
+
+```{r}
+correlation_matrix <- cor(all_port_returns_corr)
+print(correlation_matrix)
+```
+
+
+```{r}
+corrplot(correlation_matrix, method = "color")
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(melted_correlation_matrix, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Correlation Matrix Heatmap", x = "Assets", y = "Assets")
+```
+
+## Plot Cumulative Returns for 10 stocks
+```{r}
+chart.CumReturns(portfolio_returns_10, main = "Cumulative Returns - R/R Port10", wealth.index = TRUE)
+```
+
+```{r}
+charts.PerformanceSummary(portfolio_returns_10)
+```
+
+## Plot Cumulative Returns for 20 stocks
+```{r}
+chart.CumReturns(portfolio_returns_20, main = "Cumulative Returns - R/R Port20", wealth.index = TRUE)
+```
+
+```{r}
+charts.PerformanceSummary(portfolio_returns_20)
+```
+## Plot Cumulative Returns for 10 stocks with rebalancing
+```{r}
+chart.CumReturns(portfolio_returns_10_rebalanced, main = "Cumulative Returns - R/R Port10 w rebalancing", wealth.index = TRUE)
+```
+
+```{r}
+charts.PerformanceSummary(portfolio_returns_10_rebalanced)
+```
+
+## Plot Cumulative Returns for 20 stocks with rebalancing
+```{r}
+chart.CumReturns(portfolio_returns_20_rebalanced, main = "Cumulative Returns - R/R Port20 w rebalancing", wealth.index = TRUE)
+```
+
+```{r}
+charts.PerformanceSummary(portfolio_returns_20_rebalanced)
+```
+
+
+## Optimization, Rebalancing, Effient Frontier
+## Efficient Frontier for 10 stocks
+
+## Function to generate multiple points on the efficient frontier
+```{r}
+generate_efficient_frontier_10 <- function(port1ret, portf_10, num_points = 50) {
+  eff_frontier <- data.frame(Return = numeric(), Risk = numeric(), SharpeRatio = numeric())
+  min_return <- min(colMeans(port1ret, na.rm = TRUE))
+  max_return <- max(colMeans(port1ret, na.rm = TRUE))
+  
+  target_returns <- seq(min_return, max_return, length.out = num_points)
+  
+  for (target_return in target_returns) {
+    tmp_portfolio <- portf_10
+    tmp_portfolio <- add.constraint(tmp_portfolio, type = "return", return_target = target_return)
+    tmp_portfolio <- add.objective(tmp_portfolio, type = "risk", name = "StdDev")
+    opt <- optimize.portfolio (R = port1ret, portfolio = tmp_portfolio, optimize_method = "ROI", trace = TRUE)
+    ret <- mean(Return.portfolio(R = port1ret, weights = extractWeights(opt)))
+    risk <- StdDev(Return.portfolio(R = port1ret, weights = extractWeights(opt)))
+    sharpe <- ret/risk
+    eff_frontier <- rbind(eff_frontier, data.frame(Return = ret, Risk = risk, SharpeRatio = sharpe))
+  }
+  return(eff_frontier)
+}
+```
+
+## Generate efficient frontier
+```{r}
+efficient_frontier <- generate_efficient_frontier_10(port1ret, portf_10, num_points = 100)
+```
+
+## Plot efficient frontier
+```{r}
+plot(efficient_frontier$Risk
+     ,efficient_frontier$Return
+     ,type = "l"
+     ,col="black"
+     ,lwd = 1
+     ,xlab = "Risk (StdDev)"
+     ,ylab = "Return"
+     ,main = "Efficient Frontier"
+     )
+points(efficient_frontier$Risk
+       ,efficient_frontier$Return
+       ,col = "grey"
+#       ,pch = 16
+)
+```
+
+
+# Efficient Frontier ~~~~~~~~~~~~~~~~~~~~~
+
+```{r}
+generate_efficient_frontier_20 <<- function(port2ret, portf_20, num_points = 50) {
+  eff_frontier <<- data.frame(Return = numeric(), Risk = numeric(), SharpeRatio = numeric())
+  min_return <<- min(colMeans(port2ret, na.rm = TRUE))
+  max_return <<- max(colMeans(port2ret, na.rm = TRUE))
+  target_returns <- seq(min_return, max_return, length.out = num_points)
+  
+  for (target_return in target_returns) {
+    tmp_portfolio <<- portf_20
+    tmp_portfolio <<- add.constraint(tmp_portfolio, type = "return", return_target = target_return)
+    tmp_portfolio <<- add.objective(tmp_portfolio, type = "risk", name = "StdDev")
+    
+    opt <<- optimize.portfolio(R = port2ret, portfolio = tmp_portfolio, optimize_method = "ROI", trace = TRUE)
+    ret <<- mean(Return.portfolio(R = port2ret, weights = extractWeights(opt)))
+    risk <<- StdDev(Return.portfolio(R = port2ret, weights = extractWeights(opt)))
+    
+    sharpe <<- ret/risk
+    eff_frontier <<- rbind(eff_frontier, data.frame(Return = ret, Risk = risk, SharpeRatio = sharpe))
+  }
+  
+  return(eff_frontier)
+}
+```
+
+# Generate efficient frontier
+```{r}
+efficient_frontier <- generate_efficient_frontier_20(port2ret, portf_20, num_points = 100)
+```
+
+# Plot efficient frontier
+```{r}
+plot(efficient_frontier$Risk
+     ,efficient_frontier$Return
+     ,type = "l"
+     ,col="black"
+     ,lwd = 2
+     ,xlab = "Risk (StdDev)"
+     ,ylab = "Return"
+     ,main = "Efficient Frontier"
+     )
+points(efficient_frontier$Risk
+       ,efficient_frontier$Return
+       ,col = "gray"
+#       ,pch = 16
+       )
+```
+
+
+
+
+
+```{r}
+break
+```
+
+# Optimization ~~~~~~~~~~~~~~~~~~~~~
+
+```{r}
+port_spec1 <- portfolio.spec(assets = colnames(port1))
+port_spec1
+View(port_spec1)
+```
+
+```{r}
+#min=0.99 max1.01 to relax constraint
+
+port_spec1 <- add.constraint(portfolio=port_spec1,type="weight_sum"
+                             ,min_sum=0.0
+                             ,max_sum=1.0)
+
+```
+
+```{r}
+port_spec1 <- add.constraint(portfolio = port_spec1
+                             ,type = "long_only")
+```
+
+```{r}
+port_spec1 <- add.constraint(portfolio = port_spec1
+                             ,type = "box"
+                             , min=0.0
+                             , max=1.0)
+```
+
+```{r}
+# Can be minimize risk or max return
+# For max specify type = "return" or type = "risk"
+portMinVar1 <- port_spec1
+portMinVar1 <- add.objective(portfolio = portMinVar1
+                             ,type= "risk"
+                             ,name = "StdDev")
+View(portMinVar1)
+```
+
+```{r}
+minVarOpt1 <- optimize.portfolio(R = port1
+                                 , portfolio = portMinVar1
+                                 , optimize_method = "random"
+                                 )
+```
+
+```{r}
+(minVarOpt1_Weights <- extractWeights(minVarOpt1))
+```
+
+```{r}
+minVarOpt1_Return <- Return.portfolio(R = port1, 
+                                weights = minVarOpt1_Weights)
+```
+
+```{r}
+# Quadtratic Programming
+quadProg1 <- optimize.portfolio(R = port1
+                                 , portfolio = portMinVar1
+                                 , optimize_method = "quadprog"
+                                 ,verbose=TRUE
+                                 )
+```
+
+```{r}
+(quadProg1_Weights <- extractWeights(minVarOpt1))
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Appendix ~~~~~~~~~~~~~~~~~~~~~
+
+```{r}
+break
+```
+
+## Appendix 1: Code used to transform 20 xlsx Files from Refinitiv Eikon
+```{r,eval=FALSE}
+# Define portfolios
+portfolio1 <- c("acen", "allhc", "apx", "cnpf", "bpi", "cnvrg", "fgen", "jgs", "meg", "pxp")
+portfolio2 <- c("agi", "ali", "bdo", "ict", "mac", "wlcon", "nikl", "smc", "cbc", "psei")
+path <- "C:/Users/chard/OneDrive/Desktop/MSCF/Courses/Term5/Trading Software and Programming/scripts/PortOpt_Final/"
+```
+
+```{r,transform1,eval=FALSE}
+# 20 downloaded xlsx files acquired from refinitiv eikon
+# for loop logic: (1) file name aliased as 'ticker' name (2) drop all fields except exchange date and close and append Ticker name (3) 'ticker' is then mapped to portfolio1 or portfolio2, see list above (4) loop repeats until all tickers are bucketed (5) output is a large list of two portfolios with 10 stocks each
+file_list <- list.files(path = path, pattern = "*.xlsx", full.names = TRUE)
+
+df_list_portfolio1 <- list()
+df_list_portfolio2 <- list()
+
+for (file in file_list) {
+  df <- read_excel(file)
+  ticker <- tools::file_path_sans_ext(basename(file)) 
+  df <- df %>% select(`Exchange Date`, Close) %>% mutate(Ticker = ticker) 
+  
+  if (ticker %in% portfolio1) {
+    df_list_portfolio1 <- append(df_list_portfolio1, list(df))
+  } else if (ticker %in% portfolio2) {
+    df_list_portfolio2 <- append(df_list_portfolio2, list(df))
+  }
+}
+df_list_portfolio1
+df_list_portfolio2
+```
+
+```{r,transform2,eval=FALSE}
+# merge the two large list into a two dataframes
+port1 <- data.frame(bind_rows(df_list_portfolio1))
+port2 <- data.frame(bind_rows(df_list_portfolio2))
+port1
+port2
+```
+
+```{r,transform3, eval=FALSE}
+# merge again two form 11 fields with close as the price and ticker as the column
+port1 <- port1 %>%
+  select(Exchange.Date, Ticker, Close) %>%
+  pivot_wider(names_from = Ticker, values_from = Close)
+port2 <- port2 %>%
+  select(Exchange.Date, Ticker, Close) %>%
+  pivot_wider(names_from = Ticker, values_from = Close)
+
+# rename
+colnames(port1)[1] <- "date"
+colnames(port2)[1] <- "date"
+
+# write to output file for data submission, this file is used below. it is saved in your setwd or working directory
+#write.csv(port1, "port1.csv",row.names = FALSE) 
+#write.csv(port2, "port2.csv",row.names = FALSE) 
+
+
+port2
+port1
+```
+
+
+
+## Appendix 2: Other code chunks for computing Returns
+
+```{r,log return,eval=FALSE}
+# Log returns w na.omit
+
+logReturns1na <- na.omit(CalculateReturns(port1, method = "log"))
+logReturns2na <- na.omit(CalculateReturns(port2, method = "log"))
+view(logReturns2na)
+```
+
+```{r, log return v2 - Only for single returns,eval=FALSE}
+# Log returns for single stocks
+logreturns_single1 <- periodReturn(port1,
+             period="daily"
+             ,subset = NULL
+             ,type = "log"
+             ,leading = TRUE)
+logreturns_single2 <- periodReturn(port2,
+             period="daily"
+             ,subset = NULL
+             ,type = "log"
+             ,leading = TRUE)
+view(logreturns_single1)
+```
+
+```{r,eval=FALSE}
+# ROC returns
+returns <- ROC(port1, type = "continuous")[-1]
+```
+
+```{r,port1 for 2 stocks w 50/50 ratio,eval=FALSE}
+logreturns_double1 <- na.omit(port1yr)
+logreturns_double1 <- logreturns_double1[,1:2]
+```
+
+```{r,eval=FALSE}
+logreturns_double2 <- na.omit(port2yr)
+logreturns_double2 <- logreturns_double2[,1:2]
+```
+
+```{r,port1 for 2 stocks w 50/50 ratio,eval=FALSE}
+port1ret <- PerformanceAnalytics::Return.portfolio(logreturns_double1,c(0.5,0.5))
+view(port1ret)
+colnames(port1ret) <- "port1_50_Ret"
+mean(port1ret)*1512 # 2016 == 8 years, 252 == 1  year trading days
+```
+
+```{r,port2 for 2 stocks w 50/50 ratio,eval=FALSE}
+
+port2ret <- PerformanceAnalytics::Return.portfolio(logreturns_double2,c(0.5,0.5))
+view(port2ret)
+colnames(port2ret) <- "port2_50_Ret"
+mean(port2ret)*1512 # 2016 == 8 years, 252 == 1  year trading days
+```
+
+
+## Appendix 3: Handling Infinity and NA
+
+```{r, Inf Checker function,eval=FALSE}
+# Code is breaking due to instances of infinity when a 0 is returned and is subsequently divided by a function
+
+# initialize infinity check function
+infChecker <- function(data) {
+  infIndices <- which(is.infinite(data), arr.ind = TRUE)
+  return(infIndices)
+}
+
+# var list
+dataList <<- list(logreturns_single1
+           ,logreturns_single2
+           ,logReturns1
+           ,logReturns2
+           ,logReturns1na
+           ,logReturns2na
+           ,port1
+           ,port2
+           ,logreturns_double1
+           ,logreturns_double2
+           ,port1ret
+           ,port2ret
+           ,port1yr
+           ,port2yr
+           ) 
+vrList <<- c("logreturns_single1"
+           ,"logreturns_single2"
+           ,"logReturns1"
+           ,"logReturns2"
+           ,"logReturns1na"
+           ,"logReturns2na"
+           ,"port1"
+           ,"port2"
+           ,"logreturns_double1"
+           ,"logreturns_double2"
+           ,"port1ret"
+           ,"port2ret"
+           ,"port1yr"
+           ,"port2yr"
+           ) 
+
+# Apply f(x)
+infIndices <- lapply(dataList, infChecker)
+names(infIndices) <- vrList
+#print(infIndices)
+```
+
+```{r, handling Infinity,eval=FALSE}
+# Here from the above code we can see both port1ret and port2ret variable is causing the code to break
+# Inf value is breaking code due to division by 0
+#port2yrInf <- which(is.infinite(port2ret), arr.ind = TRUE)
+
+lapply(port2ret, infChecker)
+lapply(port1ret, infChecker)
+
+```
+
+```{r,eval=FALSE}
+port1ret[is.infinite(port1ret)] <- NA
+port1ret <- port1ret[complete.cases(port1ret), ]
+lapply(port1ret, infChecker)
+```
+
+```{r, handling Infinity,eval=FALSE}
+# Use NA and Drop
+port2ret[is.infinite(port2ret)] <- NA
+port2ret <- port2ret[complete.cases(port2ret), ]
+lapply(port2ret, infChecker)
+```
+
+
+## Appendix 4: Rebalancing
+
+```{r,port1 for 2 stocks w 50/50 ratio,eval=FALSE}
+#logreturns_double1 <- na.omit(port1yr)
+#logreturns_double1 <- logreturns_double1[,1:2]
+#port1ret <- PerformanceAnalytics::Return.portfolio(logreturns_double1,c(0.5,0.5))
+view(port1ret)
+colnames(port1ret) <- "port1_50_Ret"
+mean(port1ret)*1512 # 2016 == 8 years, 252 == 1  year trading days
+```
+
+```{r,port2 for 2 stocks w 50/50 ratio,eval=FALSE}
+# Re initialize without the Inf values
+#logreturns_double2 <- na.omit(port2yr)
+#logreturns_double2 <- logreturns_double2[,1:2]
+#port2ret <- PerformanceAnalytics::Return.portfolio(logreturns_double2,c(0.5,0.5))
+view(port2ret)
+colnames(port2ret) <- "port2_50_Ret"
+mean(port2ret)*1512 # 2016 == 8 years, 252 == 1  year trading days
+```
+
+```{r,rebal_port1_doublestocks,eval=FALSE}
+port1_50 <- na.omit(port1yr)
+port1_50 <- port1_50[,1:2]
+port1RetRebal <- Return.portfolio(port1_50, c(0.5,0.5),rebalance_on = "months")
+view(port1RetRebal)
+colnames(port1RetRebal) <- "port50Rebal_Ret"
+```
+
+```{r,eval=FALSE}
+head(port1ret,30)
+head(port1RetRebal,30)
+```
+
+```{r,rebal_port2_doublestocks,eval=FALSE}
+port2_50 <- na.omit(port2yr)
+port2_50 <- port1_50[,1:2]
+port2RetRebal <- Return.portfolio(port2_50, c(0.5,0.5),rebalance_on = "months")
+view(port2RetRebal)
+colnames(port2RetRebal) <- "port50Rebal_Ret"
+```
+
+```{r,eval=FALSE}
+head(port2ret,30)
+head(port2RetRebal,30)
+```
+
+```{r,eval=FALSE}
+allport1ret <- cbind(port1ret,port1RetRebal)
+colnames(allport1ret) <- c("Non-Rebalanced","Monthly Rebalanced")
+table.AnnualizedReturns(allport1ret,Rf=0.1/2016)
+```
+
+
+## Appendix 5: Port specifications code chunks
+```{r,eval=FALSE}
+# Create initial portfolio specification
+portfolio_spec <- portfolio.spec(assets = port1)
+
+# Add constraint for full investment
+portfolio_spec <- add.constraint(portfolio = portfolio_spec, 
+                                 type = "full_investment")
+
+# Add constraint for long only positions
+portfolio_spec <- add.constraint(portfolio = portfolio_spec, 
+                                 type = "long_only")
+# Add weight constraints (e.g., between 5% and 40% for each asset)
+portfolio_spec <- add.constraint(portfolio = portfolio_spec, type = "box", min = 0.0, max = 1.0)
+
+#Use box in your output as per recommendation
+#Long only minimum 0 and .05
+# 0 is unnecessary if there is 0.5
+```
+
+
+
+
+## Appendix 6: Efficient Frontier Models
+
+```{r,eval=FALSE}
+#Generate Efficient Frontier
+
+
+
+# Function to generate multiple points on the efficient frontier
+generate_efficient_frontier <- function(returns, portfolio_spec, num_points = 50) {
+  eff_frontier <- data.frame(Return = numeric(), Risk = numeric(), SharpeRatio = numeric())
+  
+  min_return <- min(colMeans(returns))
+  max_return <- max(colMeans(returns))
+  
+  target_returns <- seq(min_return, max_return, length.out = num_points)
+  
+  for (target_return in target_returns) {
+    tmp_portfolio <- portfolio_spec
+    
+    # Add the return objective dynamically for each target return
+    tmp_portfolio <- add.constraint(tmp_portfolio, type = "return", return_target = target_return)
+    tmp_portfolio <- add.objective(tmp_portfolio, type = "risk", name = "StdDev")
+    
+    opt <- optimize.portfolio(R = returns, portfolio = tmp_portfolio, optimize_method = "ROI", trace = TRUE)
+    
+    ret <- mean(Return.portfolio(R = returns, weights = extractWeights(opt)))
+    risk <- StdDev(Return.portfolio(R = returns, weights = extractWeights(opt)))
+    sharpe <- ret / risk
+    
+    eff_frontier <- rbind(eff_frontier, data.frame(Return = ret, Risk = risk, SharpeRatio = sharpe))
+  }
+  
+  return(eff_frontier)
+}
+
+```
+
+```{r,eval=FALSE}
+# Generate efficient frontier
+efficient_frontier <- generate_efficient_frontier(returns, portfolio_spec, num_points = 100)
+
+# Plot efficient frontier
+plot(efficient_frontier$Risk, efficient_frontier$Return, type = "l", col = "blue", lwd = 2,
+     xlab = "Risk (StdDev)", ylab = "Return", main = "Efficient Frontier")
+points(efficient_frontier$Risk, efficient_frontier$Return, col = "blue", pch = 16)
+
+```
+
+
+```{r,eval=FALSE}
+# Function to extract and calculate returns
+calculate_returns <- function(data) {
+  if (is.null(data) || nrow(data) == 0 || 
+      !"Exchange Date" %in% names(data) || !"Close" %in% names(data)) {
+    warning("Invalid data structure")
+    return(NULL)
+  }
+  
+  data %>%
+    select(`Exchange Date`, Close) %>%
+    arrange(`Exchange Date`) %>%
+    mutate(Returns = (Close - lag(Close)) / lag(Close)) %>%
+    select(`Exchange Date`, Returns) %>%
+    na.omit()
+}
+
+# Process both portfolios
+process_portfolio <- function(portfolio_stocks) {
+  portfolio_data <- map(stock_data[portfolio_stocks], calculate_returns)
+  portfolio_data <- compact(portfolio_data)  # Remove any NULL results
+  
+  # Combine all stocks' returns into a single dataframe
+  reduce(portfolio_data, function(acc, x) {
+    full_join(acc, x, by = "date") %>%
+      rename(!!sym(names(which(portfolio_stocks == cur_data()$name))) := Returns)
+  })
+}
+
+# Calculate returns for both portfolios
+portfolio1_combined <- process_portfolio(portfolio1)
+portfolio2_combined <- process_portfolio(portfolio2)
+
+# Check the results
+print(dim(portfolio1_combined))
+print(names(portfolio1_combined))
+print(dim(portfolio2_combined))
+print(names(portfolio2_combined))
+```
+
+
+```{r,eval=FALSE}
+library(dplyr)
+library(purrr)
+library(tidyr)
+
+# Function to extract and calculate returns
+calculate_returns <- function(data) {
+  if (is.null(data) || nrow(data) == 0 ||
+      !"date" %in% names(data) || !"Close" %in% names(data)) {
+    warning("Invalid data structure")
+    return(NULL)
+  }
+  
+  data %>%
+    select(`Exchange Date`, Close) %>%
+    arrange(date) %>%
+    mutate(Returns = (Close - lag(Close)) / lag(Close)) %>%
+    select(date, Returns) %>%
+    na.omit()
+}
+
+# Process both portfolios
+process_portfolio <- function(portfolio_stocks, stock_data) {
+  portfolio_data <- map(stock_data[portfolio_stocks], calculate_returns)
+  portfolio_data <- compact(port1ret) # Remove any NULL results
+  
+  # Combine all stocks' returns into a single dataframe
+  combined_data <- reduce(portfolio_data, function(acc, x) {
+    full_join(acc, x, by = "Exchange Date")
+  })
+  
+  combined_data
+}
+
+stock_data <- list(
+  stock1 = port1ret(`Exchange Date` = as.Date('2022-01-01') + 0:9, Close = runif(10, 100, 200)),
+  stock2 = port1ret(`Exchange Date` = as.Date('2022-01-01') + 0:9, Close = runif(10, 50, 150)),
+  stock3 = port1ret(`Exchange Date` = as.Date('2022-01-01') + 0:9, Close = runif(10, 200, 300))
+)
+
+portfolio1 <- c("stock1", "stock2")
+portfolio2 <- c("stock2", "stock3")
+
+# Calculate returns for both portfolios
+portfolio1_combined <- process_portfolio(portfolio1, stock_data)
+portfolio2_combined <- process_portfolio(portfolio2, stock_data)
+
+# Check the results
+print(dim(portfolio1_combined))
+print(names(portfolio1_combined))
+print(dim(portfolio2_combined))
+print(names(portfolio2_combined))
+
+```
+
+
+```{r,eval=FALSE}
+# Step 5: Generate the efficient frontier
+generate_efficient_frontier <- function(returns) {
+  # Create portfolio specification
+  port_spec <- portfolio.spec(colnames(returns))
+  port_spec <- add.constraint(portfolio = port_spec, type = "full_investment")
+  port_spec <- add.constraint(portfolio = port_spec, type = "long_only")
+  port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "StdDev")
+  port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
+
+  # Optimize the portfolio
+  opt_port <- optimize.portfolio(R = returns, portfolio = port_spec, optimize_method = "DEoptim", trace = TRUE)
+
+  # Generate efficient frontier
+  eff_frontier <- create.EfficientFrontier(R = returns, portfolio = port_spec, n.portfolios = 100, type = "mean-StdDev")
+
+  return(eff_frontier)
+}
+
+efficient_frontier1 <- generate_efficient_frontier(portfolio1_combined)
+efficient_frontier2 <- generate_efficient_frontier(portfolio2_combined)
+
+# Plot the efficient frontiers
+plot(efficient_frontier1, main = "Efficient Frontier - Portfolio 1")
+plot(efficient_frontier2, main = "Efficient Frontier - Portfolio 2")
+```
+
+
+
+
+
+
+# END ~~~~~~~~~~~~~~~~~~~~~
+
+The $opt_10$ object contains the results of the portfolio optimization process performed by the optimize.portfolio function from the PortfolioAnalytics package. It is a complex list that store various details about the optimized portfolio, including the optimized weights, returns, risks, and additional information used and generated during the optimization process.
+
+1. Optimized Weights
+The primary component of interest in this object is the optimized weights for each asset in the portfolio. These weights indicate the proportion of the total investment allocated to each asset to achieve the optimization objectives.
+
+2. Expected Returns and Risks
+It contains information about the expected returns and risks (standard deviation) of the optimized portfolios. The optimization process aims to find the optimal balance between return and risk based on the specified objectives and constraints.
+You sent
+3. Constraints and Objectives
+The object stores the constraints and objectives defined for the optimization, such as the full investment constraint, box constraints on asset weights, and the objectives for maximizing returns and minimizing risk.
+
+4. Optimization Method and Results
+Information about the optimization method used (e.g., "ROI" for R Optimization Infrastructure) and the results of the optimization process, including convergence details and performance metrics.
+
+5. Call and Data
+The original function call and the data used for the optimization is also stored in this object. This includes the historical returns data and the portfolio specification.
+<<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>>
+Parameters:
+Portfolio1 = ['acen','allhc','apx','cnpf','bpi','cnvrg','fgen','jgs','meg','pxp']
+Portfolio2 = ['agi','ali','bdo','ict','mac','wlcon','nikl','smc','cbc','psei']
+Rf = 0.06275 ~ 6.275% (worldgovernmentbonds.com/bond-historical-data/philippines/10-years/) 10 year-PH Riskfree rate
+Date range = 01012015-12312023
+Count = approx 2000 rows by 20 variables
+Data = refinitiv eikon
+
+Use log returns to create a portfolio of the 10 assets:
+ a) Optimized Portfolio with No Rebalancing
+ b) Optimized Portfolio with Rebalancing
+ Create a table comparing the risk and return for each case together with the Sharpe ratio
+ You have to use the current risk free rate in the market (10 YEAR TREASURY IS ACCEPTABLE)
+ Create the Efficient frontier for both Cases
+
+10 year - Philippines Risk free rate
+worldgovernmentbonds.com/bond-historical-data/philippines/10-years/
+<<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>><<<<<<<<<<<<>>>>>>>>>>
+
+Guide steps
+
+Collect historical price data for the selected assets.
+Calculate log returns for each asset.
+Compute the mean returns and covariance matrix.
+Define the objective function for portfolio optimization.
+Set constraints for the optimization problem.
+Implement the quadratic optimization algorithm.
+Generate the efficient frontier by varying the target return.
+Create optimized portfolios with and without rebalancing.
+Calculate risk, return, and Sharpe ratio for each portfolio.
+Visualize the efficient frontier for both cases.
+Analyze and compare the results.
+Prepare a comprehensive report with findings and insights.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
