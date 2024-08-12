@@ -1,0 +1,180 @@
+---
+title: "AugMeeting"
+author: "Richard Gan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+require(readxl)
+require(xts)
+require(readr)
+require(tidyverse)
+require(broom)
+require(stargazer)
+require(tidyquant)
+require(purrr)
+require(tidyr)
+require(dplyr)
+require(quantmod)
+require(PerformanceAnalytics)
+require(PortfolioAnalytics)
+require(TTR)
+require(DEoptim)
+require(ROI)
+require(qmao)
+require(zoo)
+require(quadprog)
+require(ggplot2)
+require(foreach)
+#install.packages("ROI.plugin.quadprog")
+library(ROI.plugin.quadprog)
+#install.packages("ROI.plugin.glpk")
+library(ROI.plugin.glpk)
+```
+
+
+
+```{r}
+getSymbols(c("DGS1MO", "DGS3MO", "DGS6MO", "DGS1", "DGS2", "DGS5", "DGS10", "DGS30"), src="FRED")
+
+```
+
+
+```{r}
+# Merge data into a single data frame
+yields <- merge(DGS1MO, DGS3MO, DGS6MO, DGS1, DGS2, DGS5, DGS10, DGS30)
+yields <- na.omit(yields)
+names(yields) <- c("1Month", "3Month", "6Month", "1Year", "2Year", "5Year", "10Year", "30Year")
+```
+
+
+```{r}
+# Get the last available yield data
+last_yield <- tail(yields, 1)
+
+yield_curve <- data.frame(
+  Term = c("1 Month", "3 Month", "6 Month", "1 Year", "2 Year", "5 Year", "10 Year", "30 Year"),
+  Yield = as.numeric(last_yield)
+)
+# Convert the terms to a factor with the correct order
+yield_curve$Term <- factor(yield_curve$Term, levels = c("1 Month", "3 Month", "6 Month", "1 Year", "2 Year", "5 Year", "10 Year", "30 Year"))
+```
+
+
+```{r}
+# Plot the Yield Curve with a smooth line
+ggplot(yield_curve, aes(x = Term, y = Yield, group = 1)) +
+  geom_point(color = "red", size = 3) +
+  geom_line(color = "blue") +
+  ggtitle("US Yield Curve") +
+  xlab("Term") +
+  ylab("Yield (%)") +
+  theme_minimal() +
+  geom_smooth(se = FALSE, method = "loess", color = "blue")
+```
+
+```{r}
+# Get Unemployment Rate Data
+getSymbols("UNRATE", src="FRED")
+
+# Calculate the Sahm Rule Indicator
+unemployment_rate <- UNRATE["2023/2024"]
+sahm_rule <- rollapply(unemployment_rate, width=3, mean, align='right')
+sahm_indicator <- tail(sahm_rule, 1) - min(unemployment_rate["2023/2024"])
+
+# Output the Sahm Indicator Value
+sahm_indicator
+
+# Current Unemployment Rate
+current_unemployment <- tail(unemployment_rate, 1)
+current_unemployment
+
+```
+
+
+```{r}
+# Load the necessary libraries
+library(quantmod)
+library(TTR)
+library(PerformanceAnalytics)
+```
+
+```{r}
+# Get SPY data
+getSymbols("SPY", from = "2010-01-01", to = "2023-12-31")
+prices <- Cl(SPY)
+# Plot the closing prices
+chartSeries(SPY, theme = chartTheme("white"), TA = NULL)
+```
+
+```{r}
+# Simple Moving Average (SMA) - 50-day and 200-day
+short_sma <- SMA(prices, n = 50)
+long_sma <- SMA(prices, n = 200)
+```
+
+```{r}
+# Plot the SPY price chart
+chartSeries(SPY, theme = chartTheme("white"))
+# Add the SMA to the chart
+addTA(short_sma, on = 1, col = "blue", legend = "50-day SMA")
+addTA(long_sma, on = 1, col = "red", legend = "200-day SMA")
+```
+
+
+
+
+```{r}
+# Exponential Moving Average (EMA) - 12-day and 26-day
+short_ema <- EMA(prices, n = 12)
+long_ema <- EMA(prices, n = 26)
+
+# Plot EMA
+chartSeries(SPY, theme = chartTheme("white"), TA = NULL)
+addTA(short_ema, on = 1, col = "green")
+addTA(long_ema, on = 1, col = "orange")
+```
+```{r}
+# Relative Strength Index (RSI) - 14-day
+rsi <- RSI(prices, n = 14)
+
+# Plot RSI
+chartSeries(SPY, theme = chartTheme("white"), TA = NULL)
+addTA(rsi, col = "purple", legend = "RSI")
+```
+
+
+
+```{r}
+# Moving Average Convergence Divergence (MACD)
+macd <- MACD(prices, nFast = 12, nSlow = 26, nSig = 9)
+
+# Plot MACD
+chartSeries(SPY, theme = chartTheme("white"), TA = NULL)
+addTA(macd$macd, on = 1, col = "blue")
+addTA(macd$signal, on = 1, col = "red")
+```
+
+```{r}
+# Create the trading signals
+signals_sma <- ifelse(short_sma > long_sma, 1, -1)
+signals_ema <- ifelse(short_ema > long_ema, 1, -1)
+signals_rsi <- ifelse(rsi < 30, 1, ifelse(rsi > 70, -1, 0))
+signals_macd <- ifelse(macd$macd > macd$signal, 1, -1)
+
+# Combined signals
+signals_sma_rsi <- ifelse(short_sma > long_sma & rsi < 30, 1, ifelse(short_sma < long_sma & rsi > 70, -1, 0))
+signals_ema_macd <- ifelse(short_ema > long_ema & macd$macd > macd$signal, 1, ifelse(short_ema < long_ema & macd$macd < macd$signal, -1, 0))
+```
+
+
+```{r}
+# Handle NA values in signals using Last Observation Carried Forward
+signals_sma <- na.locf(signals_sma, na.rm = FALSE)
+signals_ema <- na.locf(signals_ema, na.rm = FALSE)
+signals_rsi <- na.locf(signals_rsi, na.rm = FALSE)
+signals_macd <- na.locf(signals_macd, na.rm = FALSE)
+signals_sma_rsi <- na.locf(signals_sma_rsi, na.rm = FALSE)
+signals_ema_macd <- na.locf(signals_ema_macd, na.rm = FALSE)
+```
+

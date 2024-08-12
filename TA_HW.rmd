@@ -1,0 +1,104 @@
+---
+title: "technicalAnalysisHW"
+author: "Richard Gan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+# install.packages('quantmod','PortfolioAnalytics','PerformanceAnalytics','TTR')
+require(quantmod,PortfolioAnalytics,PerformanceAnalytics,TTR)
+```
+
+$$
+\begin{aligned}
+\\&\textbf {Money Flow Index 14 DayPeriod}
+\\&\
+\\&\text {Price = (high + low + close) / 3}
+\\&\text {Raw Money Flow = Typical Price x Volume}
+\\&\text {Money Flow Ratio = (14-dayPeriodPositiveMoneyFlow / 14-dayPeriodNegativeMoneyFlow )}
+\end{aligned}
+$$
+
+```{r, Fetch Price}
+getSymbols('AAPL', src = 'yahoo', from ='2018-01-01',to ='2023-12-31')
+
+## Capital 'C' Lowercase 'l'
+aapl_cl <- Cl(AAPL); View(aapl_cl) 
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+mySMA <-  function (price,n)
+{
+  sma <- c()
+  sma[1:(n-14)] <- NA # From 1 up to the n period
+    for (i in n:length(price))
+    {
+    sma[i] <- mean(price[(i-n+2):i])
+    }
+  sma <- reclass(sma,price)
+
+return(sma)
+}
+```
+
+```{r}
+mysma <- mySMA(prices, n=20)
+head(mysma, n=22); tail (mysma,n=5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$$
+\begin{aligned}&y_i = \beta_0 + \beta_2 x_{i2} + \beta_3 xx{i3} + ... + \beta _n x_{in} + \epsilon_i
+
+\\&\textbf{where, for } i = n~\textbf{observations:}
+\\&y_i\text{response variable}
+\\&x_i\text{explanatory variables}
+\\&\beta_0=\text{y-intercept (constant)}
+\\&\beta_n=\text{slope coefficients for each explanatory variable}
+\\&\epsilon_i\text{the model's error term (aka residuals)}
+\end{aligned}
+$$
+
+
+```{r setup, knit, include=FALSE}
+
+knitr::opts_chunk$set(comment=NA,prompt=TRUE,out.width=750,fig.height=8,fig.width = 8)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

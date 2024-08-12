@@ -1,0 +1,208 @@
+---
+title: "technicalAnalysis"
+author: "Richard Gan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+
+$$
+\begin{aligned}&y_i = \beta_0 + \beta_2 x_{i2} + \beta_3 xx{i3} + ... + \beta _n x_{in} + \epsilon_i
+
+\\&\textbf{where, for } i = n~\textbf{observations:}
+\\&y_i\text{response variable}
+\\&x_i\text{explanatory variables}
+\\&\beta_0=\text{y-intercept (constant)}
+\\&\beta_n=\text{slope coefficients for each explanatory variable}
+\\&\epsilon_i\text{the model's error term (aka residuals)}
+\end{aligned}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(quantmod, TTR, PerformanceAnaytics,PortfolioAnalytics)
+
+```
+
+```{r}
+
+require(pacman)
+```
+```{r}
+#hw 1 each on output, use 5 years  | trend, volatility, and price
+# show the formula using latex for your measure
+#do not use more than one per measure (vol, price)
+```
+
+
+```{r}
+getSymbols('AAPL',src='yahoo',from='2023-01-01',to='2023-12-31'
+)
+apple_cl<- cl(APPL); view(apple_cl)
+```
+
+
+First measure
+Simple Moving Average (SMA) - this is calculated by averaging the prices over a specific number of periods.
+
+Advantages: Easy to calculate, smooths out price data.
+Disadvantages: Lags behind current price trends.
+Use in Trading: Identifies trends. When the price is above the SMA, it's an uptrend; below, it's a downtrend.
+
+$$
+\text{SMA}_n = \frac{1}{n} \sum_{i=1}^{n} P_i
+$$
+$$
+\begin{aligned}
+\text{where}\
+  & P_i && \text{: price at time i} \\
+  & \text{n} && \text{: number of periods} \\
+  \end{aligned}
+$$
+
+
+
+```{r}
+mySMA <- function (price,n){
+  sma <- c()
+  sma[1:(n-1)] <- NA
+  for (i in n:length(price)){
+    sma[i]<-mean(price[(i-n+1):i])
+  }
+  sma <- reclass(sma,price)
+  return(sma)
+}
+```
+
+apply function
+```{r}
+mysma <- mySMA(aapl_cl,n=20)
+  head(mysma,n=22); tail(mysma,n=5)
+```
+
+
+
+
+apply function
+```{r}
+sma <- TTR:SMA(aapl_cl,n=20)
+head(mysma,n=22); tail(mysma,n=5)
+  head(mysma,n=22); tail(mysma,n=5)
+```
+
+
+
+Exponential Moving Average (EMA) - this is similar to SMA but gives more weight to recent prices.
+
+Advantages: More responsive to recent price changes than SMA.
+Disadvantages: Can be more volatile than SMA.
+Use in Trading: Identifies trends with less lag. Often used in conjunction with other indicators.
+
+$$
+\text{EMA}_t = \alpha \cdot P_t + (1 - \alpha) \cdot \text{EMA}_{t-1}
+$$
+
+$$
+\begin{aligned}
+\text{where}\
+  & P_t && \text{: price at time t} \\
+  & \alpha && \text{: Smoothing operator = 2/(𝑛+ 1)} \\
+  & \text{n} && \text{: number of periods} \\
+  \end{aligned}
+$$
+
+```{r}
+ema <-  
+```
+```{r}
+chartSeries(AAPL,TA=NULL,theme=ChartTheme("white"),name="Apple Inc.")
+addTA(sma,on=1,col='red')
+addTA(ema,on=1,col='red')
+```
+
+ 
+
+```{r}
+ema_20 <- EMA(prices,n=20)
+sma_50 <- EMA(prices,n=20)
+```
+
+```{r}
+
+chartSeries(AAPL,TA=NULL,theme=charTheme("white"),name='Apple  Inc(AAPL)'
+            
+```
+## SMA Plot
+It is the average price over the last n periods.
+It smooths out price data by creating a constantly updated average price.
+It helps identify the direction of the trend.
+
+### What May be gleaned from the SMA plot:
+
+* When the price is above the SMA, it indicates a potential uptrend.
+* When the price is below the SMA, it indicates a potential downtrend.
+* Crossovers (when the price crosses the SMA) can signal potential buy or sell opportunities.
+
+## EMA Plot
+The EMA plot gives more weight to recent prices, making it more responsive to new information. It smooths out price fluctuations and highlights trends more quickly than SMA.
+### What may be gleaned from the EMA plot:
+Similar to SMA, but more sensitive to recent price changes.
+Crossovers between EMA and price can signal potential buy or sell opportunities.
+Useful for detecting trend reversals sooner than SMA.
+
+Both SMA and EMA help identify the trend direction. When the price is above the moving average, it indicates an uptrend; when below, a downtrend.
+
+Crossover Strategy:
+
+Buy Signal: When the shorter-term moving average (e.g., 20-day EMA) crosses above the longer-term moving average (e.g., 50-day SMA), it indicates a potential uptrend, and you might consider buying. (Buy signal arises when a short-run SMA crosses from below to above a long-run SMA.)
+
+Sell Signal: When the shorter-term moving average crosses below the longer-term moving average, it indicates a potential downtrend, and you might consider selling. (Sell signal arrises when a short-run SMA crosses from above to above a long-run SMA.)
+```{r}
+#plotting
+{r}
+chartSeries(AAPL, TA = NULL, theme = chartTheme("white"), name = "Apple Inc. (AAPL)")
+addTA(sma, on = 1, col="red")
+addTA(ema, on = 1, col="green")
+```
+
+
+```{r}
+3) Bollinger Bands - consists of a middle band (SMA) and two outer bands that are standard deviations away from the middle band (usually 2).
+
+Advantages: Indicates volatility, overbought, and oversold conditions.
+Disadvantages: Can give false signals in a trending market.
+Use in Trading: Buy when prices touch the lower band and sell when they touch the upper band.
+$$
+\text{Upper Band} = \text{SMA}_n + 2 \cdot \sigma\\
+\text{Lower Band} = \text{SMA}_n - 2 \cdot \sigma
+$$
+$$
+\begin{aligned}
+\text{where}\
+  & SMA_n && \text{: Simple Moving Average over 𝑛 periods} \\
+  & \sigma && \text{: Simple Moving Average over 𝑛 periods}
+  \end{aligned}
+$$
+```
+```{r}
+4) Relative Strength Index (RSI) - this measures the speed and change of price movements.
+
+Advantages: Identifies overbought and oversold conditions.
+Disadvantages: Can stay in overbought/oversold conditions for a long time during strong trends.
+Use in Trading: Buy when RSI is below 30 and sell when RSI is above 70.
+
+$$
+\text{RSI} = 100 - \left( \frac{100}{1 + \frac{\text{Average Gain}}{\text{Average Loss}}} \right)
+$$
+$$
+\begin{aligned}
+\text{where}\
+  & \text{Average gain} && \text{: average gain over the specific period}\\
+  & \text{Average loss} && \text{: average loss over the specific period}\\
+  \end{aligned}
+$$
+```
+
